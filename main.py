@@ -4,6 +4,7 @@ from config import client, MODEL_NAME
 from tools import (
     search_resume,
     analyze_jd,
+    match_job,
     save_interview_note,
 )
 
@@ -70,6 +71,28 @@ TOOLS = [
                 "required": ["note"]
             }
         }
+    },
+    {
+    "type": "function",
+    "function": {
+        "name": "match_job",
+        "description": (
+            "分析招聘JD并与用户的真实简历进行技能匹配，"
+            "找出符合要求的技能和缺少直接证据的技能。"
+            "当用户询问岗位匹配度、是否适合投递、"
+            "或者自身能力与招聘要求的差距时调用。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "jd_text": {
+                    "type": "string",
+                    "description": "完整的招聘岗位JD"
+                }
+            },
+            "required": ["jd_text"]
+        }
+    }
     }
 ]
 
@@ -78,6 +101,7 @@ TOOL_FUNCTIONS = {
     "search_resume": search_resume,
     "analyze_jd": analyze_jd,
     "save_interview_note": save_interview_note,
+    "match_job":match_job
 }
 
 SYSTEM_PROMPT = """
@@ -99,6 +123,16 @@ SYSTEM_PROMPT = """
 4. 不要编造用户不存在的项目经历。
 
 5. 工具执行后，根据工具结果继续完成任务。
+
+6. 当用户提供招聘JD，并希望判断自己是否适合该岗位、
+   分析技能匹配情况或能力差距时，优先调用 match_job。
+
+7. match_job 已经包含 JD 解析和简历匹配，
+   不需要为了同一个匹配任务重复调用 analyze_jd。
+
+8. 根据工具返回的结果，分别解释已匹配的技能、
+   缺少直接证据的技能，并提出具体学习建议。
+   不要把简历中没有记录的技能直接判断为用户不会。
 """
 
 messages=[

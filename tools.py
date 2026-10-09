@@ -1,5 +1,5 @@
 import json
-
+from config import client, MODEL_NAME
 
 RESUME_DATA = {
     "skills": [
@@ -34,10 +34,29 @@ RESUME_DATA = {
 def search_resume(query:str)->str:
     print(f"\n[Tool]search_resume被调用")
     print(f"参数为{query}")
-    return json.dumps(
-        RESUME_DATA,
-        ensure_ascii=False
-    )
+    keyword=query.strip().lower()
+    matched_skills=[]
+    for skill in RESUME_DATA['skills']:
+        if keyword in skill.lower():
+            matched_skills.append(skill)
+    matched_projects=[]
+    for project in RESUME_DATA["projects"]:
+        text = (
+            project["name"] + " " +
+            project["description"]
+        ).lower()
+
+        if keyword in text:
+            matched_projects.append(project)
+    # 3. 整理查询结果
+    result = {
+        "query": query,
+        "matched_skills": matched_skills,
+        "matched_projects": matched_projects,
+        "found": bool(matched_skills or matched_projects)
+    }
+
+    return json.dumps(result, ensure_ascii=False)
 
 
 def analyze_jd(jd_text: str) -> str:
@@ -47,37 +66,91 @@ def analyze_jd(jd_text: str) -> str:
 
     print("\n[TOOL] analyze_jd 被调用")
 
-    keywords = [
-        "C++",
-        "Python",
-        "Java",
-        "Flask",
-        "MySQL",
-        "Redis",
-        "Linux",
-        "TCP",
-        "网络",
-        "数据库",
-        "算法",
-        "AI",
-        "Agent"
-    ]
+    prompt = f"""
+    你是一名专业的招聘岗位分析助手。
 
-    found = []
+    请分析以下招聘 JD，提取技术技能要求。
 
-    for keyword in keywords:
-        if keyword.lower() in jd_text.lower():
-            found.append(keyword)
+    输出 JSON 格式，结构如下：
 
+    {{
+        "job_title": "岗位名称",
+        "requirements": [
+            {{
+                "skill": "技术名称",
+                "importance": "required",
+                "evidence": "JD中对应的原文"
+            }}
+        ]
+    }}
+
+    1. importance 只能是 required 或 preferred。
+    2. 必须掌握的技术标记为 required。
+    3. 优先考虑或加分项标记为 preferred。
+    4. 不允许编造 JD 中没有的要求。
+    5. evidence 必须引用 JD 原文。
+    6. 只返回 JSON，不要输出其他内容。
+
+    JD内容：
+    {jd_text}
+"""
+    response=client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[
+            {"role":"user",
+            "content":prompt
+            }
+        ],
+        response_format={"type":"json_object"}
+    )
+    content=response.choices[0].message.content
+    result=json.loads(content)
+    return json.dumps(result,ensure_ascii=False)
+
+def match_job(jd_text: str) -> str:
+    print("\n[Tool] match_job 被调用")
+
+    # 第一步：使用 AI 分析 JD
+    jd_result = json.loads(analyze_jd(jd_text))
+
+    # 第二步：获取简历中的技能列表
+    resume_skills = RESUME_DATA["skills"]
+
+    matched = []
+    missing = []
+
+    # 第三步：遍历岗位要求
+    for requirement in jd_result["requirements"]:
+
+        skill = requirement["skill"]
+
+        # 忽略大小写，进行精确匹配
+        is_matched = any(
+            skill.lower() == s.lower()
+            for s in resume_skills
+        )
+
+        item = {
+            "skill": skill,
+            "importance": requirement["importance"],
+            "matched": is_matched
+        }
+
+        if is_matched:
+            matched.append(item)
+        else:
+            missing.append(item)
+
+    # 第四步：整理结果
     result = {
-        "detected_skills": found,
-        "original_jd": jd_text
+        "job_title": jd_result["job_title"],
+        "matched_skills": matched,
+        "missing_skills": missing,
+        "matched_count": len(matched),
+        "missing_count": len(missing)
     }
 
-    return json.dumps(
-        result,
-        ensure_ascii=False
-    )
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 def save_interview_note(note: str) -> str:
     """
