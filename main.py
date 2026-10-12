@@ -6,6 +6,7 @@ from tools import (
     analyze_jd,
     match_job,
     save_interview_note,
+    import_resume,
 )
 
 
@@ -93,7 +94,33 @@ TOOLS = [
             "required": ["jd_text"]
         }
     }
+    },
+    {
+    "type": "function",
+    "function": {
+        "name": "import_resume",
+        "description": (
+            "导入用户的真实PDF或Word简历。"
+            "读取本地简历文件，调用AI提取技能、"
+            "教育经历和项目经历，并保存结构化数据。"
+            "当用户要求导入、读取或更新简历时使用。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string",
+                    "description": (
+                        "简历文件名，例如resume.pdf或resume.docx。"
+                        "文件必须位于local_resumes目录下，"
+                        "只传文件名，不传完整路径。"
+                    )
+                }
+            },
+            "required": ["file_name"]
+        }
     }
+}
 ]
 
 ##建立tools名称到函数的映射
@@ -101,7 +128,8 @@ TOOL_FUNCTIONS = {
     "search_resume": search_resume,
     "analyze_jd": analyze_jd,
     "save_interview_note": save_interview_note,
-    "match_job":match_job
+    "match_job": match_job,
+    "import_resume": import_resume
 }
 
 SYSTEM_PROMPT = """
@@ -133,6 +161,32 @@ SYSTEM_PROMPT = """
 8. 根据工具返回的结果，分别解释已匹配的技能、
    缺少直接证据的技能，并提出具体学习建议。
    不要把简历中没有记录的技能直接判断为用户不会。
+
+9. 当用户明确要求导入、读取或更新简历文件时，
+   使用 import_resume 工具。
+
+10. import_resume 的 file_name 参数只需要文件名，
+    如 resume.pdf，不要添加目录路径。
+
+11. 导入成功后，后续简历搜索和岗位匹配
+    应使用新导入的真实简历数据。
+
+12. 如果用户没有提供文件名，不要编造文件名，
+    应询问用户希望导入哪个文件。
+
+13. 用户询问岗位匹配度、个人技术能力、
+    项目经历或求职建议时，应根据实际需要
+    自主调用 search_resume 或 match_job。
+
+14. 用户不需要明确要求导入简历。
+    简历工具会自动读取已有数据，
+    必要时自动解析本地简历文件。
+
+15. 与用户个人经历无关的问题，
+    不要无意义地调用简历工具。
+
+16. 当存在多份简历且无法确定使用哪份时，
+    应询问用户，而不是随机选择。
 """
 
 messages=[

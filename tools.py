@@ -1,62 +1,81 @@
 import json
 from config import client, MODEL_NAME
+from resume_analyzer import analyze_resume
 
-RESUME_DATA = {
-    "skills": [
-        "C++",
-        "Python",
-        "Flask",
-        "SQLAlchemy",
-        "SQLite",
-        "PyTorch",
-        "计算机网络"
-    ],
+from pathlib import Path
 
-    "projects": [
-        {
-            "name": "校园社交推荐平台",
-            "description": (
-                "基于 Flask 和 SQLAlchemy 实现校园社交平台后端，"
-                "使用 GNN 学习用户 embedding，"
-                "结合余弦相似度、用户画像和共同关注进行推荐。"
+RESUME_PATH = (
+    Path(__file__).resolve().parent
+    / "local_resumes"
+    / "resume.json"
+)
+
+
+
+def load_resume_data() -> dict:
+    resume_dir = RESUME_PATH.parent
+
+    # 1. 如果没有缓存，尝试自动导入
+    if not RESUME_PATH.is_file():
+        files = [
+            p for p in resume_dir.iterdir()
+            if p.is_file()
+            and p.suffix.lower() in (".pdf", ".docx")
+        ] if resume_dir.is_dir() else []
+
+        if len(files) == 0:
+            raise FileNotFoundError(
+                "没有找到简历，请先将 PDF 或 Word "
+                "放入 local_resumes 文件夹"
             )
-        },
-        {
-            "name": "UE5 游戏项目",
-            "description": (
-                "使用 Unreal Engine 5 和 C++ 开发校园悬疑游戏，"
-                "实现角色控制及交互功能。"
+
+        if len(files) > 1:
+            names = [p.name for p in files]
+            raise ValueError(
+                f"发现多份简历：{names}，"
+                "需要用户确认使用哪一份"
             )
-        }
-    ]
-}
 
-def search_resume(query:str)->str:
-    print(f"\n[Tool]search_resume被调用")
-    print(f"参数为{query}")
-    keyword=query.strip().lower()
-    matched_skills=[]
-    for skill in RESUME_DATA['skills']:
-        if keyword in skill.lower():
-            matched_skills.append(skill)
-    matched_projects=[]
-    for project in RESUME_DATA["projects"]:
-        text = (
-            project["name"] + " " +
-            project["description"]
-        ).lower()
+        # 只有一份简历，自动导入
+        print(f"[Auto Import] {files[0].name}")
+        import_resume(files[0].name)
 
-        if keyword in text:
-            matched_projects.append(project)
-    # 3. 整理查询结果
+    # 2. 读取结构化简历
+    with open(RESUME_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    # 3. 验证数据
+    if not isinstance(data, dict):
+        raise ValueError("简历数据格式不正确")
+
+    for key in ("education", "skills", "projects"):
+        if not isinstance(data.get(key), list):
+            raise ValueError(f"简历字段格式错误：{key}")
+
+    return data
+
+
+
+
+def search_resume(query: str) -> str:
+    print("\n[Tool] search_resume 被调用")
+    print(f"查询需求：{query}")
+
+    # 自动读取简历，必要时自动导入 PDF / Word
+    resume_data = load_resume_data()
+
+    # 直接返回完整的结构化简历
     result = {
         "query": query,
-        "matched_skills": matched_skills,
-        "matched_projects": matched_projects,
-        "found": bool(matched_skills or matched_projects)
+        "found": True,
+        "resume": resume_data
     }
 
-    return json.dumps(result, ensure_ascii=False)
+    return json.dumps(
+        result,
+        ensure_ascii=False
+    )
+
 
 
 def analyze_jd(jd_text: str) -> str:
@@ -114,7 +133,7 @@ def match_job(jd_text: str) -> str:
     jd_result = json.loads(analyze_jd(jd_text))
 
     # 第二步：获取简历中的技能列表
-    resume_skills = RESUME_DATA["skills"]
+    resume_skills = load_resume_data()["skills"]
 
     matched = []
     missing = []
@@ -167,3 +186,48 @@ def save_interview_note(note: str) -> str:
         f.write(note + "\n")
 
     return "面试笔记保存成功"
+
+def import_resume(file_name: str) -> str:
+    """
+    导入真实简历并生成结构化数据。
+    由 Agent 自主决定何时调用。
+    """
+    print("\n[Tool] import_resume 被调用")
+
+    resume_dir = (
+        Path(__file__).resolve().parent
+        / "local_resumes"
+    ).resolve()
+
+    # 只允许读取 local_resumes 内的文件
+    file_path = (resume_dir / file_name).resolve()
+
+    if not file_path.is_relative_to(resume_dir):
+        raise ValueError("不允许访问简历目录之外的文件")
+
+    # 自动判断 PDF / Word 并调用 DeepSeek 分析
+    resume_data = analyze_resume(str(file_path))
+
+    # 保存结果
+    output_path = resume_dir / "resume.json"
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(
+            resume_data,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
+
+    return json.dumps({
+        "status": "success",
+        "message": "简历导入成功",
+        "skills": resume_data["skills"],
+        "project_count": len(resume_data["projects"]),
+        "saved_to": str(output_path)
+    }, ensure_ascii=False)
+
